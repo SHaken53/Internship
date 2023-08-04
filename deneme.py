@@ -1,7 +1,6 @@
 import os
 import sys
 import csv
-
 import itertools
 import pandas as pd
 from openpyxl import Workbook, load_workbook
@@ -12,15 +11,21 @@ from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QVBoxLayout, QHBoxLayout, \
     QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit, QMessageBox, QWidget, \
     QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem, QTabWidget, QDialog, \
-    QFrame, QSizePolicy, QHeaderView
+    QFrame, QSizePolicy, QHeaderView, QCheckBox
 
 
 
 class ExcelProcessorApp(QMainWindow):
     def __init__(self):
         super().__init__()
-
         self.init_ui()
+        
+        self.column_checkboxes = []  # Sütun checkboxları için boş bir liste
+        self.selected_columns = []  # Seçili sütunların indekslerini tutacak bir liste
+        self.column_names = ['Sütun 1', 'Sütun 2', 'Sütun 3']  # Sütun adlarını içeren bir liste
+
+        self.create_column_checkboxes()
+        
 
     def init_ui(self):
         self.setWindowTitle("Format_Düzenleyici_Demo_01")
@@ -265,9 +270,6 @@ class ExcelProcessorApp(QMainWindow):
 
         self.load_columns()
 
-
-
-
     def browse_file(self):
         options = QFileDialog.Options()
         file_path, _ = QFileDialog.getOpenFileName(self, "Excel Dosyası Seçin", "", "Excel Dosyaları (*.xlsx *.xls);;All Files (*)", options=options)
@@ -302,7 +304,6 @@ class ExcelProcessorApp(QMainWindow):
     def load_columns(self):
         if not self.csv_file_path:
             return
-
         try:
             # Dosyanın gerçek kodlamasını tespit etme
             with open(self.csv_file_path, 'rb') as f:
@@ -324,80 +325,60 @@ class ExcelProcessorApp(QMainWindow):
             QMessageBox.critical(self, "Hata", "Dosya açılırken bir hata oluştu:\n" + str(e))
             return
 
-        columns = self.data_frame.columns.tolist()
+        columns = self.data_frame.columns
 
-        self.column_list.clear()
-        for column in columns:
-            item = QListWidgetItem(column)
-            item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            item.setCheckState(Qt.Checked)
-            self.column_list.addItem(item)
-        
+        # Sütun başlıklarını ve ilk 5 veriyi göstermek için tablo oluşturma
+        table_widget = QTableWidget(6, len(columns))
+        table_widget.setHorizontalHeaderLabels(columns)
+
+        for c, column in enumerate(columns):
+            values = self.data_frame[column].head(5).tolist()
+            for r, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                table_widget.setItem(r, c, item)
+
+        # Sütun adlarını da ilk satıra ekleme
+        for c, column in enumerate(columns):
+            item = QTableWidgetItem(column)
+            table_widget.setItem(5, c, item)
+
+        # Tabloyu bir öğe olarak liste içine yerleştirmek için widget kullanma
+        item = QListWidgetItem()
+        item.setSizeHint(table_widget.sizeHint())
+
+        self.column_list.addItem(item)
+        self.column_list.setItemWidget(item, table_widget)
+
         # Sütun adlarına tıklama özelliğini ekle
+        self.column_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.column_list.itemClicked.connect(self.toggle_column_selection)
-
-    # Sütun seçimini değiştirmek için yeni bir fonksiyon oluşturun
-    def toggle_column_selection(self, item):
-        current_state = item.checkState()
-        new_state = Qt.Checked if current_state == Qt.Unchecked else Qt.Unchecked
-        item.setCheckState(new_state)
-
-    def get_selected_columns(self):
-        selected_columns = []
-        for i in range(self.column_list.count()):
-            item = self.column_list.item(i)
-            if item.checkState() == Qt.Checked:
-                selected_columns.append(item.text())
-        return selected_columns
+    
+    def create_column_checkboxes(self):
+        for i, column_name in enumerate(self.column_names):
+            checkbox = QCheckBox(column_name)
+            checkbox.stateChanged.connect(lambda state, idx=i: self.toggle_column_selection(state, idx))
+            self.column_checkboxes.append(checkbox)
+          
+    def toggle_column_selection(self, state, index):
+        checkbox = self.column_checkboxes[index]
+        if state == QtCore.Qt.Checked:
+            if index not in self.selected_columns:
+                self.selected_columns.append(index)
+                print(f"Sütun {index + 1} seçildi.")
+                # İlgili sütun seçimiyle ilgili işlemleri gerçekleştirin
+        else:
+            if index in self.selected_columns:
+                self.selected_columns.remove(index)
+                print(f"Sütun {index + 1} seçimi kaldırıldı.")
+                # İlgili sütun seçimiyle ilgili işlemleri gerçekleştirin
 
     def select_all_columns(self):
-        for i in range(self.column_list.count()):
-            item = self.column_list.item(i)
-            item.setCheckState(Qt.Checked)
+        for checkbox in self.column_checkboxes:
+            checkbox.setChecked(True)
 
     def deselect_all_columns(self):
-        for i in range(self.column_list.count()):
-            item = self.column_list.item(i)
-            item.setCheckState(Qt.Unchecked)
-
-    # def process_variation_kod(self):
-    #     selected_columns = self.get_selected_columns()
-
-    #     if len(selected_columns) < 2:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen 'STOKKODU' sütununu ve bir belirleyici sütunu seçin.")
-    #         return
-
-    #     stok_kodu_column = None
-    #     belirleyici_column = None
-
-    #     for column in selected_columns:
-    #         if column.lower() in ["stokkodu", "stok kodu", "stok_kodu"]:
-    #             stok_kodu_column = column
-    #         else:
-    #             belirleyici_column = column
-
-    #     if not stok_kodu_column:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen 'STOKKODU' sütununu seçin.")
-    #         return
-
-    #     if not belirleyici_column:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen bir belirleyici sütun seçin.")
-    #         return
-
-    #     variation_kod_list = []
-    #     count_dict = {}
-
-    #     for index, row in self.data_frame.iterrows():
-    #         stok_kodu = row[stok_kodu_column]
-    #         belirleyici = row[belirleyici_column]
-
-    #         if pd.notna(stok_kodu) and pd.notna(belirleyici):
-    #             data = f"{stok_kodu}{belirleyici}".replace(" ", "")
-    #             count_dict[data] = count_dict.get(data, 0) + 1
-    #             variation_kod_list.append(f"{data}-{count_dict[data]}")
-
-    #     self.variation_kod_results = variation_kod_list
-    #     self.show_results()
+        for checkbox in self.column_checkboxes:
+            checkbox.setChecked(False)
 
     def process_variation_kod(self):
         selected_columns = self.get_selected_columns()
@@ -439,22 +420,6 @@ class ExcelProcessorApp(QMainWindow):
 
         self.variation_kod_results = variation_kod_list
         self.show_results()
-
-    # def process_breadcrumb_kat(self):
-    #     selected_columns = self.get_selected_columns()
-
-    #     if not selected_columns:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen en az bir sütun seçin.")
-    #         return
-
-    #     breadcrumb_list = []
-
-    #     for index, row in self.data_frame.iterrows():
-    #         breadcrumb = ">".join(str(row[column]) for column in selected_columns if pd.notna(row[column]))
-    #         breadcrumb_list.append(breadcrumb)
-
-    #     self.breadcrumb_kat_results = breadcrumb_list
-    #     self.show_results()
 
     def process_breadcrumb_kat(self):
         selected_columns = self.get_selected_columns()
@@ -499,31 +464,6 @@ class ExcelProcessorApp(QMainWindow):
             QMessageBox.critical(self, "Hata", "CSV dosyası okunurken bir hata oluştu:\n" + str(e))
             return []
 
-    # def process_variation(self):
-    #     selected_columns = self.get_selected_columns()
-    #     if not selected_columns:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen bir veya daha fazla sütun seçin.")
-    #         return
-
-    #     variations = self.get_variations(selected_columns)
-
-    #     variation_str_list = []
-    #     variation_set = set()  # Set to store unique variations
-
-    #     for variation in variations:
-    #         # Generate all possible combinations of the values for each column
-    #         combinations = list(itertools.product(*[variation[key].split(";") for key in selected_columns]))
-    #         for combination in combinations:
-    #             variation_items = [f"{selected_columns[i]};{combination[i]}" for i in range(len(selected_columns))]
-    #             variation_str = ",".join(variation_items)
-
-    #             if variation_str not in variation_set:
-    #                 variation_set.add(variation_str)
-    #                 variation_str_list.append(variation_str)
-
-    #     self.variation_results = variation_str_list
-    #     self.show_results()
-
     def process_variation(self):
         selected_columns = self.get_selected_columns()
         if not selected_columns:
@@ -551,31 +491,6 @@ class ExcelProcessorApp(QMainWindow):
         # Bu işlem fonksiyonunun sonuna aşağıdaki kodu ekleyin:
         for i, variation in enumerate(self.variation_results):
             self.data_frame.loc[i, 'Variation'] = variation
-
-    # def process_categories_1(self):
-    #     selected_columns = self.get_selected_columns()
-
-    #     if len(selected_columns) < 3:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen en az 3 sütun seçin.")
-    #         return
-
-    #     kategori_sutun = selected_columns[0]
-    #     alt_kategori_sutunlari = selected_columns[1:-1]
-    #     urun_sutunu = selected_columns[-1]
-
-    #     categories_str_list = []
-
-    #     for index, row in self.data_frame.iterrows():
-    #         kategori = row[kategori_sutun]
-    #         alt_kategoriler = [row[sutun] for sutun in alt_kategori_sutunlari if pd.notna(row[sutun])]
-    #         urun = row[urun_sutunu]
-
-    #         if pd.notna(kategori) and alt_kategoriler and pd.notna(urun):
-    #             breadcrumb = f"{kategori}>{'>'.join(alt_kategoriler)}; {urun}"
-    #             categories_str_list.append(breadcrumb)
-
-    #     self.categories_results = categories_str_list
-    #     self.show_results()
 
     def process_categories_1(self):
         selected_columns = self.get_selected_columns()
@@ -605,29 +520,6 @@ class ExcelProcessorApp(QMainWindow):
         # Bu işlem fonksiyonunun sonuna aşağıdaki kodu ekleyin:
         for i, categories in enumerate(self.categories_results):
             self.data_frame.loc[i, 'Categories'] = categories
-
-    # def process_categories_2(self):
-    #     selected_columns = self.get_selected_columns()
-
-    #     if len(selected_columns) != 2:
-    #         QMessageBox.warning(self, "Uyarı", "Lütfen tam olarak 2 sütun seçin.")
-    #         return
-
-    #     urun_sutunu = selected_columns[0]
-    #     alt_kategori_sutunu = selected_columns[1]
-
-    #     categories_str_list = []
-
-    #     for index, row in self.data_frame.iterrows():
-    #         urun = row[urun_sutunu]
-    #         alt_kategori = row[alt_kategori_sutunu]
-
-    #         if pd.notna(urun) and pd.notna(alt_kategori):
-    #             categories_str_list.append(f"{urun}>{alt_kategori}")
-
-    #     categories_result = ';'.join(categories_str_list)
-    #     self.categories_results = [categories_result]
-    #     self.show_results()
 
     def process_categories_2(self):
         selected_columns = self.get_selected_columns()
@@ -697,28 +589,6 @@ class ExcelProcessorApp(QMainWindow):
             QMessageBox.warning(self, "Uyarı", "Önce bir CSV dosyası seçin.")
             return
 
-        # try:
-        #     # İşlem sonuçlarını içeren DataFrame oluşturun
-        #     result_data = pd.DataFrame({
-        #         "VARYASYONKODU": self.variation_kod_results,
-        #         "BREADCRUMBKAT": self.breadcrumb_kat_results,
-        #         "VARYASYON": self.variation_results,
-        #         "KATEGORİLER": self.categories_results
-        #     })
-
-        #     # Mevcut CSV verilerini okuyun
-        #     excel_data = pd.read_csv(self.csv_file_path, encoding="utf-8")
-
-        #     # Sonuç verilerini mevcut verilere birleştirin
-        #     merged_data = pd.concat([excel_data, result_data], axis=1)
-
-        #     # Yeni Excel dosyasını kaydedin
-        #     new_excel_file_path = self.csv_file_path.replace(".csv", "_with_results.xlsx")
-        #     merged_data.to_excel(new_excel_file_path, index=False)
-
-        #     QMessageBox.information(self, "Bilgi", "İşlem sonuçları Excel dosyasına kaydedildi: " + new_excel_file_path)
-        # except Exception as e:
-        #     QMessageBox.critical(self, "Hata", "Excel dosyasına kaydedilirken bir hata oluştu:\n" + str(e))
         try:
             # Sonuç dizileri için bir sözlük oluşturun
             result_data = {
@@ -760,9 +630,6 @@ class ExcelProcessorApp(QMainWindow):
         self.variation_results = []
         self.categories_results = []
         self.show_results()
-
-
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
